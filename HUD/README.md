@@ -1,6 +1,6 @@
 # Krapong ROV Cockpit
 
-This is work in progress.
+This work is in progress.
 
 This project is based on node-copter cockpit but has some modified to use in
 Krapong ROV 
