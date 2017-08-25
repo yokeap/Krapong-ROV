@@ -191,7 +191,7 @@ navWss.on('connection', function (socket) {
         {
           data.heave = parseFloat(data.heave);
           data.surge = parseFloat(data.surge);
-          data.yaw = parseFloat(data.yaw);
+          data.yaw = parseFloat(data.yaw) / 2;
           data.sway = parseFloat(data.sway);
           data.light = parseInt(data.light) * 10;
           data.boost = parseInt(data.boost);
@@ -220,62 +220,21 @@ navWss.on('connection', function (socket) {
               f._data[i] = Math.round(f._data[i] * 50);
           }
           
-          var str = String(f._data[0] + "," + f._data[1] + "," + f._data[2] + "," + f._data[3] + "," + Math.round(f._data[4]) + "," + light + "," + "0" + "," + "0" + "," + "\n");
-          //console.log(str);
-        
-        
-          writeAndDrain(str, null);
+          var str = String(f._data[0] + ',' + f._data[1] + ','  + f._data[2] + ',' + f._data[3] + ',' + Math.round(f._data[4]) + ',' + light + ',' + '0' + ',' + '0' + ',');
           
-          /*port.write(str, function(err) {
+         port.write(str.toString('ascii') + '\n', function(err) {
               if (err) {
                 console.log('Error on write: ', err.message);
               }
               //console.log('message written');
-          });*/
+          });
         }
       //}
-      
     });
 });
 
-function writeAndDrain (data, callback) {
-  console.log(data);
-  port.flush();
-  port.write(data, function (error) {
-		if(error){console.log(error);}
-		else{
-			// waits until all output data has been transmitted to the serial port.
-		  port.drain(callback);
-		}
-  });
-}
-
-function sp_write(data) {
-    if (Open) {
-        console.log(data);
-        port.write(data, function(err, results) {
-          if (err)  console.log('Error on write: ', err.message);
-          if(results)  console.log('results ' + results.message);
-        });
-    }
-    else {
-        if (Buffer.isBuffer(data)) {
-            data.copy(SaveBuffer, SaveLen);
-            SaveLen += data.length;
-        }
-        else {
-            new Buffer(data).copy(SaveBuffer, SaveLen);
-            SaveLen += data.length;
-        }
-        //console.log('SaveLen ' + SaveLen);
-    }
-}
-
-
 var SerialPort = require('serialport');
 var Open = false;
-var SaveBuffer = new Buffer(1024);
-var SaveLen = 0;
 var port = new SerialPort('/dev/ttyS1', {
   baudRate: 115200,
   parser: SerialPort.parsers.readline('\n'),
@@ -283,12 +242,12 @@ var port = new SerialPort('/dev/ttyS1', {
 
 port.on('open', function() {
    Open = true;
-  /*port.write("main screen turn on\n", function(err) {
+  port.write("main screen turn on\n", function(err) {
     if (err) {
       return console.log('Error on write: ', err.message);
     }
     console.log('message written');
-  }); */
+  }); 
 });
 
 server.listen(9000);
