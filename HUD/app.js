@@ -97,6 +97,7 @@ if (mpu.initialize()) {
 
 var timer = 0;
 var count = 0;
+var light = 0;
 
 interval = setInterval(function() {
         
@@ -110,8 +111,8 @@ interval = setInterval(function() {
     var dt = (micros() - timer) / 1000000;
     timer = micros();
     
-    pitch = mpu.getPitch(values);
-    roll = mpu.getRoll(values);
+    pitch = mpu.getPitch(values) + 9;
+    roll = mpu.getRoll(values) + 3.85;
     yaw = mpu.getYaw(values);
     
     var gyroXrate = values[3] / 131.0;
@@ -163,7 +164,9 @@ interval = setInterval(function() {
 	console.log(values[6] + ' ' + values[7] + ' ' + values[8]);
 	console.log(magneto);
 	socket.emit('accel_data', {accel: accel, magneto: magneto});*/
-}, 10);
+}, 20);
+
+var count_send = 0;
 
 navWss.on('connection', function (socket) {
     socket.isAlive = true;
@@ -180,54 +183,106 @@ navWss.on('connection', function (socket) {
     
     socket.on('message', function incoming(message) {
       var data = JSON.parse(message);
-      count++;
+      //count++;
       //if(!data) data = [];
-      if(count > 10){
-        count = 0;
+      //if(count > 10){
+        //count = 0;
         if(data)
         {
           data.heave = parseFloat(data.heave);
           data.surge = parseFloat(data.surge);
           data.yaw = parseFloat(data.yaw);
           data.sway = parseFloat(data.sway);
+          data.light = parseInt(data.light) * 10;
+          data.boost = parseInt(data.boost);
           
-          console.log("Surge = " + data.surge + ", Sway = " + data.sway + 
-            ", Yaw = " + data.yaw + ", Heave = " + data.heave);
-        
-            var x = math.matrix([[data.surge * 40], [data.sway * 40], [data.yaw * 50], [data.heave]]);
+          
+          /*if((light >= 0) && (light <= 90)) light = light + data.light;
+          if(light > 90) light = 90;
+          if(light < 0) light = 0;
+          */
+          
+          //console.log("Surge = " + data.surge + ", Sway = " + data.sway + ", Yaw = " + data.yaw + ", Heave = " + data.heave + ", Light = " + light);
             
-            var f = math.multiply(math.matrix([[-1.7677669531, 1.7677669531,0.8928571429, 0], 
-                                           [-1.7677669531  , -1.7677669531 ,  -0.8928571429, 0], 
-                                           [ 1.7677669531 , -1.7677669531 ,0.8928571429 , 0], 
-                                           [1.7677669531, 1.76776695318,  -0.8928571429, 0], 
+        
+            var x = math.matrix([[data.surge], [data.sway], [data.yaw], [data.heave * 30]]);
+            
+            //if(data.boost) x = math.matrix([[data.surge * 30], [data.sway *30], [data.yaw * 30], [data.heave * 80]]);
+            
+            var f = math.multiply(math.matrix([[-0.3535533906, 0.3535533906,0.8928571429, 0], 
+                                           [-0.3535533906  , -0.3535533906 ,  -0.8928571429, 0], 
+                                           [ 0.3535533906 , -0.3535533906 ,0.8928571429 , 0], 
+                                           [0.3535533906 , 0.3535533906,  -0.8928571429, 0], 
                                            [0, 0, 0, 1]]), x);
         
           for (var i = 0 ; i < 4; i++) {
               if(f._data[i] < 0) f._data[i] = 0; 
-              f._data[i] = Math.round(f._data[i]);
+              f._data[i] = Math.round(f._data[i] * 50);
           }
-          var str = String(f._data[0] + "," + f._data[1] + "," + f._data[2] + "," + f._data[3] + "," + Math.round(f._data[4] * 100) + "," + "0" + "," + "0" + "," + "0" + "," + "\n");
-          console.log(str);
+          
+          var str = String(f._data[0] + "," + f._data[1] + "," + f._data[2] + "," + f._data[3] + "," + Math.round(f._data[4]) + "," + light + "," + "0" + "," + "0" + "," + "\n");
+          //console.log(str);
         
-          port.write(str, function(err) {
+        
+          writeAndDrain(str, null);
+          
+          /*port.write(str, function(err) {
               if (err) {
-                return console.log('Error on write: ', err.message);
+                console.log('Error on write: ', err.message);
               }
-              console.log('message written');
-          });
+              //console.log('message written');
+          });*/
         }
-      }
+      //}
       
     });
 });
 
+function writeAndDrain (data, callback) {
+  console.log(data);
+  port.flush();
+  port.write(data, function (error) {
+		if(error){console.log(error);}
+		else{
+			// waits until all output data has been transmitted to the serial port.
+		  port.drain(callback);
+		}
+  });
+}
+
+function sp_write(data) {
+    if (Open) {
+        console.log(data);
+        port.write(data, function(err, results) {
+          if (err)  console.log('Error on write: ', err.message);
+          if(results)  console.log('results ' + results.message);
+        });
+    }
+    else {
+        if (Buffer.isBuffer(data)) {
+            data.copy(SaveBuffer, SaveLen);
+            SaveLen += data.length;
+        }
+        else {
+            new Buffer(data).copy(SaveBuffer, SaveLen);
+            SaveLen += data.length;
+        }
+        //console.log('SaveLen ' + SaveLen);
+    }
+}
+
+
 var SerialPort = require('serialport');
+var Open = false;
+var SaveBuffer = new Buffer(1024);
+var SaveLen = 0;
 var port = new SerialPort('/dev/ttyS1', {
   baudRate: 115200,
   parser: SerialPort.parsers.readline('\n'),
 });
 
 port.on('open', function() {
+   Open = true;
   /*port.write("main screen turn on\n", function(err) {
     if (err) {
       return console.log('Error on write: ', err.message);
