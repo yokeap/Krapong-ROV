@@ -115,7 +115,45 @@
     				heave: parseFloat(gamepad.axes[3]),
     				light: parseInt(gamepad.buttons[12].value) + parseInt(gamepad.buttons[13].value * -1),
     				boost: parseFloat(gamepad.buttons[5].value)
-			    }
+			    };
+			    
+			        /*var surge = parseFloat(gamepad.axes[1]); 
+    				var sway = parseFloat(gamepad.axes[0]); 
+    				var yaw = parseFloat(gamepad.buttons[6].value * -1) + parseFloat(gamepad.buttons[7].value);
+    				var heave = parseFloat(gamepad.axes[3]);
+    				var light = parseInt(gamepad.buttons[12].value) + parseInt(gamepad.buttons[13].value * -1);
+    				/*var boost = parseFloat(gamepad.buttons[5].value);
+			    
+			      if((light >= 0) && (light <= 90)) light = light + data.light;
+                  if(light > 90) light = 90;
+                  if(light < 0) light = 0;
+                  
+                  
+                  //console.log("Surge = " + data.surge + ", Sway = " + data.sway + ", Yaw = " + data.yaw + ", Heave = " + data.heave + ", Light = " + light);
+                    
+                
+                    var x = math.matrix([[data.surge * 10], [data.sway * 10], [data.yaw * 15], [data.heave * 40]]);
+                    
+                    if(data.boost) x = math.matrix([[data.surge * 30], [data.sway *30], [data.yaw * 30], [data.heave * 80]]);
+                    
+                    var f = math.multiply(math.matrix([[-1.7677669531, 1.7677669531,0.8928571429, 0], 
+                                                   [-1.7677669531  , -1.7677669531 ,  -0.8928571429, 0], 
+                                                   [ 1.7677669531 , -1.7677669531 ,0.8928571429 , 0], 
+                                                   [1.7677669531, 1.76776695318,  -0.8928571429, 0], 
+                                                   [0, 0, 0, 1]]), x);
+                
+                  for (var i = 0 ; i < 4; i++) {
+                      if(f._data[i] < 0) f._data[i] = 0; 
+                      f._data[i] = Math.round(f._data[i]);
+                  }
+                  
+                  var str = String(f._data[0] + "," + f._data[1] + "," + f._data[2] + "," + f._data[3] + "," + Math.round(f._data[4]) + "," + light + "," + "0" + "," + "0" + "," + "\n");
+                  
+                  console.log(str);*/
+			    //onsole.log(json);
+			    /*count++;
+			    console.log(count);
+			    if(count > 10)  navdataSocket.send(JSON.stringify(json));*/
 		    });
 
         navdataSocket.onmessage = function (msg) {
@@ -126,7 +164,7 @@
             
 		   count++;
 		   //console.log(count);
-		   if(count > 5) {
+		   if(count > 1) {
 		       count = 0;
 		       navdataSocket.send(JSON.stringify(json));
 		   }
