@@ -348,7 +348,8 @@ mpu9250.prototype.getTemperatureCelsius = function() {
 */
     var TEMP_OUT = this.getTemperatureCelsiusDigital();
 	if (TEMP_OUT) {
-		return TEMP_OUT + '°C';
+		//return TEMP_OUT + '°C';
+		return Math.round(TEMP_OUT * 100.0) / 100.0;
 	}
 	return 'no data';
 };
