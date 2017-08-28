@@ -185,30 +185,24 @@ navWss.on('connection', function (socket) {
       var data = JSON.parse(message);
       //count++;
       //if(!data) data = [];
-      //if(count > 10){
-        //count = 0;
+      //if(count > 2){
+         //count = 0;
         if(data)
         {
           data.heave = parseFloat(data.heave);
           data.surge = parseFloat(data.surge);
-          data.yaw = parseFloat(data.yaw) / 2;
+          data.yaw = parseFloat(data.yaw);
           data.sway = parseFloat(data.sway);
-          data.light = parseInt(data.light) * 10;
+          data.light = parseInt(data.light) * 5;
           data.boost = parseInt(data.boost);
           
-          
-          /*if((light >= 0) && (light <= 90)) light = light + data.light;
-          if(light > 90) light = 90;
           if(light < 0) light = 0;
-          */
+          if(light > 95) light = 95;
+          if((light >= 0) && (light <= 95)) light = light + data.light;
           
           //console.log("Surge = " + data.surge + ", Sway = " + data.sway + ", Yaw = " + data.yaw + ", Heave = " + data.heave + ", Light = " + light);
-            
-        
-            var x = math.matrix([[data.surge], [data.sway], [data.yaw], [data.heave * 30]]);
-            
-            //if(data.boost) x = math.matrix([[data.surge * 30], [data.sway *30], [data.yaw * 30], [data.heave * 80]]);
-            
+          
+            var x = math.matrix([[data.surge], [data.sway], [data.yaw / 2], [data.heave]]);
             var f = math.multiply(math.matrix([[-0.3535533906, 0.3535533906,0.8928571429, 0], 
                                            [-0.3535533906  , -0.3535533906 ,  -0.8928571429, 0], 
                                            [ 0.3535533906 , -0.3535533906 ,0.8928571429 , 0], 
@@ -216,38 +210,57 @@ navWss.on('connection', function (socket) {
                                            [0, 0, 0, 1]]), x);
         
           for (var i = 0 ; i < 4; i++) {
-              if(f._data[i] < 0) f._data[i] = 0; 
-              f._data[i] = Math.round(f._data[i] * 50);
+              if(data.boost) f._data[i] = Math.round(f._data[i] * 130)
+              else { f._data[i] = Math.round(f._data[i] * 80); }
+              if(f._data[i] < 5) f._data[i] = 0; 
           }
           
-          var str = String(f._data[0] + ',' + f._data[1] + ','  + f._data[2] + ',' + f._data[3] + ',' + Math.round(f._data[4]) + ',' + light + ',' + '0' + ',' + '0' + ',');
-          
-         port.write(str.toString('ascii') + '\n', function(err) {
-              if (err) {
-                console.log('Error on write: ', err.message);
-              }
-              //console.log('message written');
-          });
+          var str = String(f._data[0] + ',' + f._data[1] + ','  + f._data[2] + ',' + f._data[3] + ',' + Math.round(f._data[4] * 30) + ',' + light + ',' + '0' + ',' + '0' + ',');
+          console.log(str + mpu.getTemperatureCelsius());
+          writeAndDrain(str + '\n', null);
         }
-      //}
     });
 });
+
+
+function writeAndDrain (data, callback) {
+  //console.log(data + ',' + mpu.getTemperatureCelsius());
+  port.write(data, function (error) {
+		if(error){console.log(error);}
+	  else{
+			// waits until all output data has been transmitted to the serial port.
+		  port.drain(callback);
+		}
+  });
+}
 
 var SerialPort = require('serialport');
 var Open = false;
 var port = new SerialPort('/dev/ttyS1', {
+  autoOpen: false,
   baudRate: 115200,
-  parser: SerialPort.parsers.readline('\n'),
+  highWaterMark: 65535
+  //parser: SerialPort.parsers.readline('\n'),
 });
+
+port.open(function (err) {
+  if (err) {
+    return console.log('Error opening port: ', err.message);
+  }
+
+  // Because there's no callback to write, write errors will be emitted on the port:
+  //port.write('main screen turn on');
+});
+
 
 port.on('open', function() {
    Open = true;
-  port.write("main screen turn on\n", function(err) {
+  /*port.write('main screen turn on\n', function(err) {
     if (err) {
       return console.log('Error on write: ', err.message);
     }
     console.log('message written');
-  }); 
+  });*/ 
 });
 
 server.listen(9000);
