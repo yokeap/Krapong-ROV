@@ -1,5 +1,10 @@
 #include <Servo.h>
 
+/* Copyright by S.Sukprasertchai
+ *
+ *
+*/
+
 class thruster{
 
   private:
