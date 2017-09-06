@@ -1,10 +1,5 @@
 #include <Servo.h>
 
-/* Copyright by S.Sukprasertchai
- *
- *
-*/
-
 class thruster{
 
   private:
@@ -49,6 +44,7 @@ String inString = "";    // string to hold input
 int n = 0;
 bool blFlag = 0;
 int value[8];
+unsigned long timeCount,last_time;
 
 Servo camServo, armServo;
 
@@ -62,9 +58,21 @@ void setup() {
   // send an intro:
   // send an intro:
   Serial.println("\n\nTest:");
+  camServo.write(0);
+  armServo.write(0);
 }
 
 void loop() {
+  timeCount = millis();
+
+  if((timeCount - last_time) > 2000) {
+    last_time = timeCount;
+    for(int i = 0; i < 6 ; i++){
+     value[i] = 0;
+    }
+    blFlag = true;
+    Serial.println("Reset");
+  }
   if (Serial1.available() > 0) {
     //Serial.print((char)Serial1.read());
     String inStringRAW = Serial1.readStringUntil('\n');
@@ -97,8 +105,18 @@ void loop() {
       }
       index++;
       blFlag = true;
-      if(++count > 1000) break;
+      count++;
+      if(count > 1000) {
+        // clear the string for new input:
+        inString = "";
+
+        //increase Thruster Position
+        n++;
+        blFlag = false;
+        break;
+      }
     }
+    last_time = timeCount;
   }
   if(blFlag){
     blFlag = false;
@@ -106,6 +124,8 @@ void loop() {
     camServo.write(value[6]);
     armServo.write(value[7]);
   }
+
+  
 }
 
 void H_Control()
