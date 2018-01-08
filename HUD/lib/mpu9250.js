@@ -348,8 +348,7 @@ mpu9250.prototype.getTemperatureCelsius = function() {
 */
     var TEMP_OUT = this.getTemperatureCelsiusDigital();
 	if (TEMP_OUT) {
-		//return TEMP_OUT + '°C';
-		return Math.round(TEMP_OUT * 100.0) / 100.0;
+		return TEMP_OUT + '°C';
 	}
 	return 'no data';
 };
@@ -566,11 +565,13 @@ mpu9250.prototype.getI2CMasterMode = function() {
 };
 
 mpu9250.prototype.getPitch = function(value) {
-	return ((Math.atan2(value[0], value[2]) + Math.PI) * (180 / Math.PI)) - 180;
+	//return ((Math.atan2(value[0], value[2]) + Math.PI) * (180 / Math.PI)) - 180;
+	return ((Math.atan2(value[1], value[2]) + Math.PI) * (180 / Math.PI)) - 180;
 };
 
 mpu9250.prototype.getRoll = function(value) {
-	return ((Math.atan2(value[1], value[2]) + Math.PI) * (180 / Math.PI)) - 180;
+	//return ((Math.atan2(value[1], value[2]) + Math.PI) * (180 / Math.PI)) - 180;
+	return ((Math.atan2(value[0], value[2]) + Math.PI) * (180 / Math.PI)) - 180;
 };
 
 mpu9250.prototype.getYaw = function(value) {
