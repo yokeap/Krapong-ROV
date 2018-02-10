@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script src="../bower_components/webcomponentsjs/webcomponents-lite.js"></script>
+    <script src="../bower_components/web-component-tester/browser.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script Xsrc="jquery-3.3.1.min.js" src="./jquery-3.3.1.min.js"></script>
+  	<script src="./jquery.AshAlom.gaugeMeter-2.0.0.min.js"></script>
+    <!--<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+    <!-- import the element to test -->
+    <link rel="import" href="../packet-video.html">
+    <link rel="import" href="../krapong-horizon.html">
+
+    <title>Krapong Cockpit</title>
+
+  </head>
+  <body style="background-color:#595959;">
+
+     <div id="video_container" class="full-height center pagination-centered" boder="1">
+       <!--packet video component declaration-->
+       <packet-video id='camera' border='1' style='width: 100%; height:100%'
+             menuState='on'
+             src='{{videoSource}}'
+             framespersecond='{{framesPerSecond}}'
+             canvas='{{canvas}}'
+             cors='false'
+             showMenu='true'
+             show-stats='{{showStats}}'>
+       </packet-video>
+
+       <!--Horizon HUD compoment-->
+       <krapong-horizon  id="horizon" style='position:absolute; top:0px; left:0px; z-index:33; width:100%; height:100%'></krapong-horizon>
+     
+     
+     </div>
+
+    <script>
+      var socket  = io.connect()
+         ,vid     = document.getElementById("camera")
+         ,horizon = document.getElementById("horizon");
+
+         setTimeout(load, 1000);
+
+         //occured when page is loaded.
+         function load(){
+          //tell the server that client was ready.
+          socket.emit('message', 'start');
+
+          socket.on('video.init.segment', function(data){
+              var initialFrame = new Uint8Array(data);
+              vid.init(initialFrame);
+          });
+
+          //mp4 fragment stream
+          socket.on('video.segment', function(data){
+            var data = new Uint8Array(data);
+            vid.append(data);
+          });
+
+          //regist the socket object to the horizon component
+          horizon.registerEmitterHandlers(socket);
+         }
+    </script>
+
+  </body>
+</html>

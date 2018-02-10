@@ -1,0 +1,631 @@
+<link rel="import" href="/bower_components/polymer/polymer.html">
+<dom-module id="packet-video">
+  <style>
+    /* TODO(polyup): For speed, consider reworking these styles with .classes
+                     and #ids rather than [attributes].
+    */
+    
+    [hidden] {
+      display: none !important;
+    }
+    /* make the video stretch to fill the screen in WebKit */
+    
+    :-webkit-full-screen {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+  <style>
+    :host {
+      display: block;
+      width: 320px;
+      height: 200px
+    }
+    
+    #video {
+      width: 100%;
+      height: 100%;
+    }
+    
+    #stats {
+      top: 5px;
+      left: 5px;
+      position: absolute;
+      padding: 2px;
+      margin: 10px;
+      font-variant: bold;
+      color: orange;
+      font-size: 1.5vw;
+    }
+
+.chart {
+  display: table;
+  table-layout: fixed;
+  width: 180px;
+  height: 90px;
+  margin: 0 auto;
+  background-image: linear-gradient(bottom, rgba(0, 0, 0, 0.1) 2%, transparent 2%);
+  background-size: 100% 50px;
+  background-position: left top;
+  border-style: groove ;
+}
+.chart li {
+  position: relative;
+  display: table-cell;
+  vertical-align: bottom;
+  height: 45px;
+}
+.chart span {
+  margin: 0 1em;
+  display: block;
+  min-width: 1px;
+  background: rgba(209, 236, 250, 0.75);
+  animation: draw 1s ease-in-out;
+}
+.chart span:before {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  padding: 5px 1em 0;
+  display: block;
+  text-align: center;
+  content: attr(title);
+  word-wrap: break-word;
+}    
+
+  </style>
+  <template strip-whitespace>
+    <div id="videocontainer" style="display:block; height:100%; width:100%; position:relative;" on-hover="">
+      <video id="video" ></video>
+      <content></content>
+      <div id='stats' hidden$="{{!showStats}}">
+        <div id='fps'><span>{{fps}}</span> decoded fps</div>
+        <div id='bps'><span>{{bps}}</span> b/s</div>
+        <div id='packets'><span>{{pps}}</span> p/s</div>
+        <div id='currentTime'><span>{{currentTime}}</span> (current time)</div>
+        <div id='buffertime'><span>{{formatSeconds(buffertime)}}</span> (buffertime)</div>
+        <div><span>{{formatSeconds(buffertimeStart)}}</span> (buffertime-start)</div>
+        <div><span>{{formatSeconds(buffertimeEnd)}}</span> (buffertime-end)</div>
+
+        <div id='gaptime'><span>{{formatSeconds(gaptime)}}</span> (gaptime)</div>
+        <div id='queue'><span>{{queueSize}}</span> (queue size)</span>
+        </div>
+        <div><span>{{framelates_ms}}</span> Transport lag</div>
+        <div><span>{{maxLateFrame_ms}}</span> MaxLateFrame_ms</div>
+        <div><span>{{lateFrames}}</span> Late Frames</div>
+        <div><span>{{loopDelay}}</span> Javascript loop delay</div>
+        <div><span>{{error}}</span> Video error?</div>
+        <div><span>{{paused}}</span> Video paused?</div>
+        <div><span>{{videoState}}</span> Video state</div>
+        <div><span>{{droppedframes}}</span> dropped frames</div>
+        <div><span>{{decodedframes}}</span> decoded frames</div>
+        <div><span>{{stats.errors.video.code3}}</span> code3 video errors</div>
+        <div><span>{{stats.errors.video.bufferDisassociation}}</span> buffer dissasociations</div>
+        <div><span>{{stats.errors.video.totalfailure}}</span> totalfailure</div>
+        <div><span>{{stats.errors.video.bufferPads}}</span> waiting for packets </div>
+        <ul class="chart">
+        <template is="dom-repeat" items="{{histogram}}">
+          <li>
+            <span style$="height: {{item}}%"></span>
+          </li>
+        </template>
+        </ul>           
+      </div>
+    </div>
+  </template>
+  <script src="/bower_components/visionmedia-debug/dist/debug.js"></script>
+  <script>
+    (function() {
+      var log = debug('socket-video:unclassified');
+      var log_setup = debug('socket-video:setup');
+      var log_trace = debug('socket-video:trace');
+      var log_healthCheck = debug('socket-video:healthCheck');
+      Polymer({
+        is: 'packet-video',
+        properties: {
+          latencyReducer: {
+            type: Boolean,
+            value: true
+          },
+          initialized: {
+            type: Boolean,
+            value: false,
+            readOnly: true
+          },
+          showStats: {
+            type: Boolean,
+            value: true
+          }
+        },
+        getVideoElement: function() {
+          return this.$.video;
+        },
+        stop: function() {
+          this._setInitialized(false);
+          this.shortCircuitAppend = true;
+          this.$.video.pause();
+          if (this.mediaSource) {
+            this.mediaSource.endOfStream();
+          }
+
+        },
+        ready: function() {
+          var self = this;
+          this.fps_count = 0;
+          this.fps = 0;
+          this.datapackets_count = 0;
+          this.bytes_count = 0;
+          this.bps = 0;
+          this.buffertime = 0;
+          this.buffertimeStart = 0;
+          this.buffertimeEnd = 0;
+          this.gaptime = 0;
+          this.paused = true;
+          this.error = false;
+          this.currentTime = 0;
+          this.droppedframes = 0;
+          this.decodedframes = 0;
+          this.pps = 0;
+          this.pps_count = 0;
+          this.stats = {
+            errors: {
+              video: {
+                code3: 0,
+                bufferDisassociation: 0,
+                totalfailure: 0,
+                bufferPads: 0,
+              },
+              mediaSource: 0,
+              bufferSource: 0
+            },
+            recoverFromPauseHistorgram: new Array(90) //roughly # of frames between default GOP    
+          };
+          this.stats.recoverFromPauseHistorgram.fill(0);
+          var video = this.$.video;
+          if (this.latencyReducer) {
+            video.playbackRate = 2; //burn through any buffer
+            var latencyInterval = function() {
+              video = this.$.video;
+              var cooldown = 0; 
+              if (!video.paused) {
+                if (video.buffered.length > 0) {
+                  var gaptime = video.seekable.end(0) - video.currentTime;
+                 
+                  if ((gaptime > 4) || (gaptime < -4)) {
+                    log_trace('reducing latency by seeking +.001');
+                    video.currentTime = video.seekable.end(0) - 0.001;
+                    cooldown = 5000;
+                  }
+                  
+                  if ((video.playbackRate == 1) && (gaptime>.1)) {
+                    video.playbackRate = 2;
+                    cooldown += 1000;
+                    log_trace('setting playback = 2');
+                  } else if ((video.playbackRate == 2) && (gaptime<.1)){
+                    video.playbackRate = 1;
+                    log_trace('setting playback = 1');                    
+                  }                 
+                }
+                
+                
+
+              }
+              setTimeout(latencyInterval.bind(this), 500 + cooldown);
+            };
+            latencyInterval.call(this);
+            
+          }
+
+
+          this.statsIntervalTimer = setInterval(function() {
+            if (!self.initialized) {
+              return;
+            }
+            var video = self.$.video;
+            self.paused = video.paused;
+            self.queueSize = self.buffer.length;
+            self.error = video.error !== null;
+            self.fps = (self.decodedframes - self.droppedframes) - self.fps_count;
+            self.fps = self.fps; //per second
+            self.bps = (self.bytes_count * 8).toLocaleString();
+            self.fps_count = self.decodedframes - self.droppedframes;
+            self.bytes_count = 0;
+            self.pps = self.pps_count;
+            self.pps_count = 0;
+            self.framelates_ms = self.transportLag;//self.pps;
+            self.lateFrames = self.laggedFrames;
+            self.maxLateFrame_ms = self.maxlaggedFrame;
+            self.maxlaggedFrame = 0;
+            self.laggedFrames = 0;
+            self.transportLag = 0;
+            self.loopDelay = self.looplag;
+            self.looplag = 0;
+            self.currentTime = video.currentTime.toLocaleString();
+            self.droppedframes = video.webkitDroppedFrameCount;
+            self.decodedframes = video.webkitDecodedFrameCount || video.mozDecodedFrames;
+            if (video.buffered.length > 0) {
+              self.buffertime = video.buffered.end(0) - video.buffered.start(0);
+              self.gaptime = video.buffered.end(0) - video.currentTime;
+              self.buffertimeStart = video.buffered.start(0);
+              self.buffertimeEnd = video.seekable.end(0);
+            } //TODO: Health Check where we are playing but there is no video buffer
+            var max = self.stats.recoverFromPauseHistorgram.reduce(function(p,v){
+              return ( p>v ? p:v);
+            })
+            self.histogram = self.stats.recoverFromPauseHistorgram.map(function(item){
+              return Math.ceil((item/max)*100);
+            })
+          }, 1000);
+
+          this.formatSeconds = function(seconds) {
+            return Number(seconds).toFixed(2) + ' seconds';
+          };
+          [
+            'loadstart',
+            'emptied',
+            'canplaythrough',
+            'ended',
+            'ratechange',
+            'progress',
+            'stalled',
+            'playing',
+            'durationchange',
+            'resize',
+            'suspend',
+            'loadedmetadata',
+            'waiting',
+            'timeupdate',
+            'volumechange',
+            'abort',
+            'loadeddata',
+            'seeking',
+            'play',
+            'error',
+            'canplay',
+            'seeked',
+            'pause',
+            'cuechange',
+            'encrypted',
+            'reset'
+          ].forEach(function(ev) {
+            video.addEventListener(ev, function() {
+              log_trace('video event:', ev);
+            });
+          });
+          video.addEventListener('stalled',function(){
+            console.error("Video stall reported");
+          });          
+
+        },
+        buffer: [],
+        initInProgress: false,
+        init: function(initFrame, callback) {
+          if (this.initInProgress) {
+            return
+          };
+          var self=this;
+          this.initInProgress = true;
+          var buffer = this.buffer;
+          buffer.length=0;
+          buffer.push(initFrame)
+          this.initFrame=initFrame;
+          var video = this.$.video;
+
+
+          // ./mp4info frag_bunny.mp4 | grep Codec
+          //var mimeCodec = 'video/mp4; codecs="avc1.4d401e"';
+          //var mimeCodec = 'video/mp4; codecs="1.640029"';
+          var mimeCodec = 'video/mp4; codecs="avc1.4D401F"';
+
+          var mediaSource = null;
+          this.mediaSource = mediaSource;
+          if ('MediaSource' in window && MediaSource.isTypeSupported(mimeCodec)) {
+            mediaSource = new MediaSource;
+            [
+              'sourceopen',
+              'sourceended',
+              'sourceclose',
+              'loadedmetadata',
+              'loadeddata',
+              'canplay',
+              'canplaythrough',
+              'seeking',
+              'ended',
+              'loadstart',
+              'playing',
+              'waiting',
+              'progress',
+              'suspend',
+              'stalled'
+            ].forEach(function(ev) {
+              mediaSource.addEventListener(ev, function() {
+                log_trace('mediaSource event:', ev);
+              });
+            });
+            var videoRequiresHumanTouch = /Android/i.test(navigator.userAgent);
+            var safePlay = function() {
+              if (!video.paused) {
+                return;
+              }
+              if (video.buffered.length == 0) {
+                return;
+              }
+              if (videoRequiresHumanTouch) {
+                videoRequiresHumanTouch = false;
+                document.addEventListener("touchstart", function(e) {
+                  video.play();
+                  document.removeEventListener(e.type, arguments.callee);
+                }, false);
+              } else {
+                video.play();
+              }
+            }
+            video.safePlay = safePlay;
+
+            video.addEventListener('suspend', function() {
+              //on a mobile connection, this seems to get triggered
+              setTimeout(function() {
+                safePlay()
+              }, 1000);
+            });
+
+            [
+              'addsourcebuffer',
+              'removesourcebuffer'
+            ].forEach(function(ev) {
+              mediaSource.sourceBuffers.addEventListener(ev, function() {
+                log_trace('sourceBufferList event:', ev);
+              });
+            });
+
+            var self = this;
+            mediaSource.sourceBuffers.addEventListener('addsourcebuffer', function() {
+              self._setInitialized(true);
+              callback();
+              self.initInProgress = false;
+            })
+
+
+            //console.log(mediaSource.readyState); // closed
+            video.src = URL.createObjectURL(mediaSource);
+
+            mediaSource.addEventListener('sourceopen', sourceOpen);
+          } else {
+            console.error('Unsupported MIME type or codec: ', mimeCodec);
+            return;
+          }
+
+
+
+          var sourceBuffer = null;
+          var lastPlayedChunk;
+          function sourceOpen(_) {
+            sourceBuffer = mediaSource.addSourceBuffer(mimeCodec);
+            [
+              'updatestart',
+              'updateend',
+              'update',
+              'error',
+              'abort'
+            ].forEach(function(ev) {
+              sourceBuffer.addEventListener(ev, function() {
+                //TODO: Move the event tracing to a debug library for runtime on/off
+                log_trace('sourceBuffer event:', ev);
+              });
+            });
+            sourceBuffer.addEventListener('error', function() {
+              log("sourceBuffer error detected");
+              sourceBuffer.errored=true;
+            });
+            if (sourceBuffer.mode) {
+              sourceBuffer.mode = 'sequence';
+            }
+            log_trace('sourceBuffer mode:', sourceBuffer.mode);
+            sourceBuffer.addEventListener('updateend', function() {
+              checkBuffer;
+            })
+
+            video.addEventListener('timeupdate', checkBuffer);
+
+            video.addEventListener('canplay', function() {
+              safePlay();
+              if (video.playbackRate==0){
+                video.playbackRate=1;
+              }
+            });
+
+            video.addEventListener('playing',function(){
+              if(self.waitingTimestamp && self.appendTimestamp){
+                var report = (Date.now()-self.appendTimestamp)>50?console.error:console.info;
+                self.stats.recoverFromPauseHistorgram[Math.min(Math.ceil((Date.now()-self.appendTimestamp)/33),self.stats.recoverFromPauseHistorgram.length-1)]++;
+
+                report(`Recover from pause took ${Date.now()-self.appendTimestamp}ms once the next frame was recieved, ${Date.now()-self.waitingTimestamp}ms total`);
+              }
+              self.waitingTimestamp = null;
+              self.appendTimestamp = null;
+            });
+
+            video.addEventListener('progress', function() {
+              safePlay();
+            });
+
+            //This ensures that if the video is about to stall, it does not because
+            //the decoder will be sent a repeat of the last frame.
+            video.addEventListener('waiting', function() {
+              if (!self.waitingTimestamp){
+                self.waitingTimestamp = Date.now();
+              }
+              if (lastPlayedChunk && (buffer.length == 0)){
+                video.playbackRate=0; 
+                self.set('stats.errors.video.bufferPads',self.stats.errors.video.bufferPads+1);
+              }
+              checkBuffer();
+            })
+
+            video.addEventListener('loadedmetadata', function() {
+              setTimeout(function() {
+                //video.currentTim  e+=.001;
+                video.safePlay();
+              }, 500);
+              //video.play(); //because canplay won't fire
+            });
+            //http://code.tutsplus.com/tutorials/html5-audio-and-video-what-you-must-know--net-15545
+            video.addEventListener('loadeddata', function() {
+              setTimeout(function() {
+                video.safePlay();
+              }, 1000);
+            });
+
+            document.addEventListener('visibilitychange', function() {
+              if (document.visibilityState == 'visible') {
+                video.safePlay();
+              }
+            })
+
+            video.addEventListener('seeking', seek);
+            this.cleanupInterval = setInterval(function() {
+              if (!sourceBuffer.updating && video.buffered.length > 0) {
+                return;
+                //This is where we can save resource by aggresively dumping played frames.
+                //but the buffers numbers seem to assume a 30fps which makes them wrong otherwise
+                //so it is a bit tricky to get right, so relying on built in flushing
+                //instead.
+                if (video.currentTime - 15 > video.buffered.start(0)) {
+                  sourceBuffer.remove(video.buffered.start(0), video.currentTime - 15);
+                }
+              }
+            }, 1000);
+            checkBuffer(); //trigger the first packet
+          };
+
+          function appendSegment(chunk) {
+            sourceBuffer.appendBuffer(chunk);
+            lastPlayedChunk = chunk;
+          };
+
+          function checkBuffer(_) {
+            //if anything in buffer, call appendSegment with the next item in the buffer
+            if ((buffer) && (buffer.length > 0) && (!sourceBuffer.updating) && (!sourceBuffer.errored)) {
+              var bsize = buffer.reduce(function(total,item){
+                return total+(item.length);
+              },0)
+              var a = new Uint8Array(bsize);
+              var counter = 0;
+              while(buffer.length>0){
+                var item = buffer.shift();
+                a.set(item,counter);
+                counter+=item.length;
+              }
+              appendSegment(a);
+            }
+          };
+          this.checkBuffer = checkBuffer;
+
+          function seek(e) {
+            log(e);
+            if (mediaSource.readyState === 'open') {
+              sourceBuffer.abort();
+              log(mediaSource.readyState);
+            } else {
+              log('seek but not open?');
+              log(mediaSource.readyState);
+            }
+          };
+
+          function detect_detachedBuffer() {
+            if ((video.buffered.length == 0) && (!video.paused)) {
+              log_healthCheck('detached buffer detected');
+              //This only appears to happen with streams that have more than just I frames.
+              return true;
+            }
+            return false;
+          }
+
+          function recover_detachedBuffer() {
+            //TODO: Recover from deteached buffer
+            //            var original_src = video.src;
+            video.pause();
+            //            video.src = original_src;
+
+          }
+
+          function detect_videoPlayerError() {
+            return video.error;
+          }
+
+          function recover_videoPlayerError() {
+            log_trace("Reinitalization of video started");
+            self.stop();
+            self.init(self.initFrame,function(){
+              log_trace("Reinitalization of video complete");
+              self.shortCircuitAppend = false;
+            });
+
+          }
+
+          this.healthCheckTimer = setInterval(function() {
+            if (detect_detachedBuffer()) {
+              recover_detachedBuffer();
+            }
+            if (detect_videoPlayerError()){
+              recover_videoPlayerError();
+            }
+          }, 1000 / 15);
+
+          var lastLoop=Date.now();
+          this.loopLatencyInterval = setInterval(function(){
+            var currentTime = Date.now();
+            self.looplag = currentTime-lastLoop-33;
+            lastLoop=currentTime;
+          },33);
+
+        },
+        append: function(data) {
+          if (this.waitingTimestamp && !this.appendTimestamp){
+            this.appendTimestamp = Date.now();
+          }
+          var currentTime = Date.now();
+          if (this.transportLag==undefined){
+            this.transportLag = 0;
+            this.lastFrameReceived = currentTime-33;
+          }
+          if (this.shortCircuitAppend) {
+            return;
+          }
+          if (this.lastcheck === undefined) {
+            this.lastcheck = 0;
+          }
+          //maxQueueSize = this.latencyReducer ? 120 : 600;
+          maxQueueSize = this.latencyReducer ? 120 : 600;
+          console.log(maxQueueSize);
+          if (this.lastcheck == data.length) {
+            //return;
+          }
+          var lag = (currentTime-this.lastFrameReceived)-33;
+          if (lag>2){ //ignore deltas less than 2ms
+            this.transportLag+=lag;
+            this.laggedFrames++;
+            if(this.maxlaggedFrame < lag){
+              this.maxlaggedFrame = lag;
+            }
+          }
+          this.lastFrameReceived = currentTime;
+          this.lastcheck = data.length;
+          this.bytes_count += data.length;
+          this.pps_count++;
+          if (this.buffer.length >= maxQueueSize) {
+            this.buffer.shift();
+          }
+          this.buffer.push(data);
+          this.checkBuffer();
+        },
+        detached: function() {
+          log('detached fired');
+          this.stop();
+        }
+
+      });
+    }());
+  </script>
+</dom-module>

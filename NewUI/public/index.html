@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style type="text/css">
+      .GaugeMeter{
+        Position:        Relative;
+        Text-Align:      Center;
+        Overflow:        Hidden;
+        Cursor:          Default;
+      }
+
+      .GaugeMeter SPAN,
+      .GaugeMeter B{
+        Margin:          0 23%;
+        Width:           54%;
+        Position:        Absolute;
+        Text-align:      Center;
+        Display:         Inline-Block;
+        Color:           #FFFFFF;
+        Font-Weight:     100;
+        Font-Family:     "Open Sans", Arial;
+        Overflow:        Hidden;
+        White-Space:     NoWrap;
+        Text-Overflow:   Ellipsis;
+      }
+      .GaugeMeter[data-style="Semi"] B{
+        Margin:          0 10%;
+        Width:           80%;
+      }
+
+      .GaugeMeter S,
+      .GaugeMeter U{
+        Text-Decoration: None;
+        Font-Size:       .49em;
+        Opacity:         .5;
+      }
+
+      .GaugeMeter B{
+        Color:           Black;
+        Font-Weight:     300;
+        Opacity:         .8;
+      }
+    </style>
+    <script Xsrc="jquery-3.3.1.min.js" src="./jquery-3.3.1.min.js"></script>
+  	<script src="./jquery.AshAlom.gaugeMeter-2.0.0.min.js"></script>
+    <script src="../bower_components/webcomponentsjs/webcomponents-lite.js"></script>
+    <script src="../bower_components/web-component-tester/browser.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+      
+    </script>
+
+    <title>Krapong Cockpit</title>
+
+  </head>
+  <body style="background-color:#595959;">
+    
+     <div id="video_container" class="full-height center pagination-centered" boder="1" style="position:relative;">
+     
+      <!--<packet video component declaration-->
+      <packet-video id='camera' border='1' style='width: 100%; height:100%'
+             menuState='on'
+             src='{{videoSource}}'
+             framespersecond='{{framesPerSecond}}'
+             canvas='{{canvas}}'
+             cors='false'
+             showMenu='true'
+             show-stats='{{showStats}}'>
+       </packet-video> -->
+
+       <!--Horizon HUD compoment-->
+       <krapong-horizon  id="horizon" style='position:absolute; top:0px; left:0px; z-index:33; width:100%; height:100%'></krapong-horizon>
+     </div>
+
+     <div class="thrustMeter" style="position:fixed; bottom:10px; left:10px; z-index=50;">
+      <div class="GaugeMeter" id="ThrustMeter_1"
+        data-percent="0"
+        data-append="%"
+        data-size="80"
+        data-style="Arch"
+        data-theme="DarkGreen-LightGreen"
+        data-width="8"
+        data-label_color=""
+        data-animate_gauge_colors="1"
+        data-id="ThrustMeter_1"
+        style="width: 80px; display: *inline-block;"
+        >
+      </div>
+
+      <div class="GaugeMeter" id="ThrustMeter_2"
+        data-percent="0"
+        data-append="%"
+        data-size="80"
+        data-style="Arch"
+        data-theme="DarkGreen-LightGreen"
+        data-width="8"
+        data-animate_gauge_colors="1"
+        data-id="ThrustMeter_2"
+        style="width: 80px; display: *inline-block;"
+        >
+      </div>
+
+      <div class="GaugeMeter" id="ThrustMeter_3"
+        data-percent="0"
+        data-append="%"
+        data-size="80"
+        data-style="Arch"
+        data-theme="DarkGreen-LightGreen"
+        data-width="8"
+        data-animate_gauge_colors="1"
+        data-id="ThrustMeter_3"
+        style="width: 80px; display: *inline-block;"
+        >
+      </div>
+
+      <div class="GaugeMeter" id="ThrustMeter_4"
+        data-percent="0"
+        data-append="%"
+        data-size="80"
+        data-style="Arch"
+        data-theme="DarkGreen-LightGreen"
+        data-width="8"
+        data-animate_gauge_colors="1"
+        data-id="ThrustMeter_4"
+        style="width: 80px; display: *inline-block;"
+        >
+      </div>
+
+      <div class="GaugeMeter" id="ThrustMeter_5"
+        data-percent="0"
+        data-append="%"
+        data-size="80"
+        data-style="Arch"
+        data-theme="DarkGreen-LightGreen"
+        data-width="8"
+        data-animate_gauge_colors="1"
+        data-id="ThrustMeter_5"
+        style="width: 80px; display: *inline-block;"
+        >
+      </div>
+    </div>
+    
+    <script>
+    $(document).ready(function(){
+      //console.log($(".GaugeMeter"));
+       $(".GaugeMeter").gaugeMeter();
+       //regist the socket object to the horizon component
+    });
+    
+          //id: GaugeMeter_1 update value
+    $('#ThrustMeter_1').data('percent', 10);
+    $('#ThrustMeter_2').data('percent', 20);
+    $('#ThrustMeter_3').data('percent', 30);
+    $('#ThrustMeter_4').data('percent', 40);
+    $('#ThrustMeter_5').data('percent', 50);
+    
+        setTimeout(load, 1000);
+
+        //occured when page is loaded.
+        function load(){
+          
+        var socket  = io.connect()
+        ,vid     = document.getElementById("camera")
+        ,horizon = document.getElementById("horizon");  
+    
+          //tell the server that client was ready.
+          horizon.registerEmitterHandlers(socket);
+          socket.emit('message', 'start');
+
+          socket.on('video.init.segment', function(data){
+              var initialFrame = new Uint8Array(data);
+              vid.init(initialFrame);
+          });
+
+          //mp4 fragment stream
+          socket.on('video.segment', function(data){
+            var data = new Uint8Array(data);
+            vid.append(data);
+          });
+        }
+    </script>
+
+    <!--<script>-->
+    <!--  var horizon = document.getElementById("horizon");-->
+      
+    <!--  horizon.registerEmitterHandlers(socket);-->
+    <!--</script>-->
+    
+  </body>
+  <!-- import the element to test -->
+    <link rel="import" href="../krapong-horizon.html">
+    <link rel="import" href="../packet-video.html">
+  
+</html>
